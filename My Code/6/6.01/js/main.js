@@ -114,6 +114,8 @@ continents.forEach(function(continent, i){
 
 d3.json("data/data.json").then(function(data){
 
+	console.log(data);
+
 	//clean data
 	formattedData = data.map(function(year){
 		return year["countries"].filter(function(country){
@@ -125,6 +127,8 @@ d3.json("data/data.json").then(function(data){
 			return country;
 		})
 	});
+
+	console.log(formattedData);
 
 	//first run of the visualization 
 	update(formattedData[0]);
