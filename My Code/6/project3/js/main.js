@@ -15,39 +15,18 @@ var g = svg.append("g")
     .attr("transform", "translate(" + margin.left + 
         ", " + margin.top + ")");
 
-// Time parser for x-scale
+var t = function() { return d3.transition().duration(1000); }
+
 var parseTime = d3.timeParse("%Y");
-
-// Format time for slider
-
 var formatTime = d3.timeFormat("%d/%m/%Y");
-
-// For tooltip
 var bisectDate = d3.bisector(function(d) { return d.year; }).left; 
 
-// Add line to chart
+// Add the line for the first time
 g.append("path")
     .attr("class", "line")
     .attr("fill", "none")
     .attr("stroke", "grey")
-    .attr("stroke-with", "3px")
-
-// Scales
-var x = d3.scaleTime().range([0, width]);
-var y = d3.scaleLinear().range([height, 0]);
-
-// Axis generators
-var xAxisCall = d3.axisBottom()
-var yAxisCall = d3.axisLeft()
-    .ticks(6)
-    .tickFormat(function(d) { return parseInt(d / 1000) + "k"; });
-
-// Axis groups
-var xAxis = g.append("g")
-    .attr("class", "x axis")
-    .attr("transform", "translate(0," + height + ")");
-var yAxis = g.append("g")
-    .attr("class", "y axis")
+    .attr("stroke-width", "3px");
 
 // Labels
 var xLabel = g.append("text")
@@ -58,17 +37,41 @@ var xLabel = g.append("text")
     .attr("text-anchor", "middle")
     .text("Period");
 
+var yLabel = g.append("text")
+    .attr("class", "y-axis label")
+    .attr("y", - 50)
+    .attr("x", - 170)
+    .attr("transform", "rotate(-90)")
+    .attr("font-size", "18px")
+    .attr("text-anchor", "middle")
+    .text("Price (USD)");
+
+// Scales
+var x = d3.scaleTime().range([0, width]);
+var y = d3.scaleLinear().range([height, 0]);
+
+// Axis generators
+var xAxisCall = d3.axisBottom()
+var xAxis = g.append("g")
+    .attr("class", "x axis")
+    .attr("transform", "translate(0," + height + ")");
+var yAxisCall = d3.axisLeft()
+    .ticks(6)
+    .tickFormat(function(d) { return parseInt(d / 1000) + "k"; });
+var yAxis = g.append("g")
+    .attr("class", "y axis")
+
 // Event Listener
-$("#coin-select").on("change", update);
-$("#coin-select").on("change", update);
+$("#coin-select").on("change", update)
+$("#var-select").on("change", update)
 
 // JQuery Slider
 $("#date-slider").slider({
     range: true, 
-    max: parseTime("10/31/2017"),
-    min: parseTime("5/12/2013"),
+    max: parseTime("10/31/2017").getTime(),
+    min: parseTime("5/12/2013").getTime(),
     step: 86400, // one day 
-    values: [parseTime("01/01/2013"), parseTime("12/31/2017")],
+    values: [parseTime("01/01/2013"), parseTime("12/31/2017").getTime()],
     slide: function(event, ui){
         $("dateLabel1").text(formatTime(new Date(ui.values[0])));
         $("dateLabel2").text(formatTime(new Date(ui.values[1])));
@@ -93,7 +96,7 @@ d3.json("data/coins.json").then(function(data) {
             d["price_usd"] = +d["price_usd"];
             d["24h_vol"] = +d["24h_vol"];
             d["market_cap"] = +d["market_cap"];
-            d["date"] = parseTime["date"];
+            d["date"] = parseTime(d["date"]);
         });
     }
 
@@ -109,32 +112,27 @@ function update() {
         return ((d.date >= sliderValues[0]) && (d.date <= sliderValues[1]))
     });
 
+    // Fix for format values
+    var formatSi = d3.format(".2s");
+    function formatAbbreviation(x) {
+        var s = formatSi(x);
+        switch (s[s.length - 1]) {
+        case "G": return s.slice(0, -1) + "B";
+        case "k": return s.slice(0, -1) + "K";
+        }
+        return s;
+    }
+
+    // Update axes
+    xAxisCall.scale(x);
+    xAxis.transition(t()).call(xAxisCall);
+    yAxisCall.scale(y);
+    yAxis.transition(t()).call(yAxisCall);
+
     // Set scale domains
     x.domain(d3.extent(dataTimeFiltered, function(d) { return d.date; }));
-    y.domain([0, d3.max(dataTimeFiltered, function(d) { return d.price_; }) * 1.005]);
-
-    // Generate axes once scales have been set
-    xAxis.call(xAxisCall.scale(x))
-    yAxis.call(yAxisCall.scale(y))
-
-    var yLabel = g.append("text")
-        .attr("class", "y-axis label")
-        .attr("y", - 50)
-        .attr("x", - 170)
-        .attr("transform", "rotate(-90)")
-        .attr("font-size", "18px")
-        .attr("text-anchor", "middle")
-        .text(yValue);
-
-    // Line path generator
-    var line = d3.line()
-        .x(function(d) { return x(d.date); })
-        .y(function(d) { return y(d[yValue]); });
-
-    // Update Line Path
-    g.select(".line")
-        .transition(1000)
-        .attr("d", line(dataTimeFiltered))
+    y.domain([0, d3.max(dataTimeFiltered, function(d) { return d[yValue]; }) * 1.005,
+        d3.min(dataTimeFiltered, function(d){ return d[yValue]; }) / 1.005]);
 
     /******************************** Tooltip Code ********************************/
 
@@ -159,7 +157,8 @@ function update() {
         .attr("x", 15)
         .attr("dy", ".31em");
 
-    g.append("rect")
+    svg.append("rect")
+        .attr("transform", "translate(" + margin.left + "," + margin.top + ")")
         .attr("class", "overlay")
         .attr("width", width)
         .attr("height", height)
@@ -172,15 +171,25 @@ function update() {
             i = bisectDate(dataTimeFiltered, x0, 1),
             d0 = dataTimeFiltered[i - 1],
             d1 = dataTimeFiltered[i],
-            d = x0 - d0.date > d1.date - x0 ? d1 : d0;
+            d = (d1 && d0) ? (x0 - d0.date > d1.date - x0 ? d1 : d0) : 0;
         focus.attr("transform", "translate(" + x(d.date) + "," + y(d[yValue]) + ")");
-        focus.select("text").text(d[yValue]);
+        focus.select("text").text(function() { return d3.format("$,")(d[yValue].toFixed(2)); });
         focus.select(".x-hover-line").attr("y2", height - y(d[yValue]));
         focus.select(".y-hover-line").attr("x2", -x(d.date));
     }
 
 
     /******************************** Tooltip Code ********************************/
+
+    // Line path generator
+    var line = d3.line()
+        .x(function(d) { return x(d.date); })
+        .y(function(d) { return y(d[yValue]); });
+
+    // Update Line Path
+    g.select(".line")
+        .transition(t)
+        .attr("d", line(dataTimeFiltered))
 
 };
 
